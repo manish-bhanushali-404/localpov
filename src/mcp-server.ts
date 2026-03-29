@@ -10,6 +10,9 @@ import { BrowserCapture } from './collectors/browser-capture';
 import { parse as parseBuildErrors } from './collectors/build-parser';
 import { checkPorts, getProcessHealth, checkEnv, checkEnvFile, tailLog } from './utils/system-info';
 import { isDockerAvailable, listContainers, getContainerLogs, dockerSummary } from './collectors/docker-watcher';
+import { detectShell, getInitFilePath } from './utils/shell-init';
+import { scanPorts } from './utils/scanner';
+import { createServer } from './utils/proxy';
 
 const pkg: { version: string } = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
 
@@ -67,16 +70,52 @@ server.registerTool('get_diagnostics', {
   const health = getProcessHealth();
   const docker = dockerSummary();
 
+  // ── Setup status checks ──
+  const setup: Record<string, string> = {};
+  setup.mcp_server = 'OK';
+
+  try {
+    const shell = detectShell();
+    const initPath = getInitFilePath(shell);
+    setup.shell_integration = fs.existsSync(initPath)
+      ? `OK (${shell})`
+      : `NOT_INSTALLED — run: npx localpov setup`;
+  } catch {
+    setup.shell_integration = 'NOT_INSTALLED — run: npx localpov setup';
+  }
+
+  if (termDiag.sessions.active > 0) {
+    setup.terminal_capture = `OK (${termDiag.sessions.active} active session${termDiag.sessions.active > 1 ? 's' : ''})`;
+  } else if (termDiag.sessions.total > 0) {
+    setup.terminal_capture = `NO_ACTIVE_SESSIONS — restart your terminal to start capturing`;
+  } else {
+    setup.terminal_capture = 'NO_SESSIONS — restart your terminal after setup to start capturing';
+  }
+
+  const hasBrowserData = browserSummary.console.total > 0 || browserSummary.network.total > 0 || browserSummary.hasScreenshot;
+  if (proxyServer) {
+    setup.browser_proxy = hasBrowserData
+      ? 'OK'
+      : `RUNNING (localhost:${PROXY_LISTEN_PORT}) — open http://localhost:${PROXY_LISTEN_PORT} in your browser to start capturing`;
+  } else {
+    setup.browser_proxy = 'NOT_STARTED — no dev server detected. Start one (e.g. npm run dev) and restart your AI agent';
+  }
+
+  // ── Summary ──
   const parts: string[] = [];
+  if (setup.shell_integration.startsWith('NOT')) parts.push('shell integration not installed');
+  if (setup.terminal_capture.startsWith('NO')) parts.push('no terminal sessions captured');
+  if (setup.browser_proxy.startsWith('NOT')) parts.push('browser proxy not connected');
   if (termDiag.errors.total > 0) parts.push(`${termDiag.errors.total} terminal error(s)`);
   if (browserSummary.console.errors > 0) parts.push(`${browserSummary.console.errors} browser console error(s)`);
   if (browserSummary.console.warnings > 0) parts.push(`${browserSummary.console.warnings} browser warning(s)`);
   if (browserSummary.network.failed > 0) parts.push(`${browserSummary.network.failed} failed network request(s)`);
   if (browserSummary.network.slow > 0) parts.push(`${browserSummary.network.slow} slow request(s)`);
   if (ports.down.length > 0) parts.push(`ports down: ${ports.down.join(', ')}`);
-  if (parts.length === 0) parts.push('All clear — no errors detected');
+  if (parts.length === 0) parts.push('All clear — everything is set up and no errors detected');
 
   return textResult({
+    setup,
     summary: parts.join('. ') + '.',
     terminal: {
       activeSessions: termDiag.sessions.active,
@@ -248,6 +287,19 @@ server.registerTool('read_browser', {
 
   if (source === 'network' || source === 'all') {
     result.network = browser.getNetworkEntries({ errorsOnly: errors_only, limit: cappedLimit });
+  }
+
+  // Check if proxy is not running / no browser connected
+  const consoleArr = result.console as unknown[] | undefined;
+  const networkArr = result.network as unknown[] | undefined;
+  const isEmpty = (!consoleArr || consoleArr.length === 0) && (!networkArr || networkArr.length === 0);
+  if (isEmpty) {
+    result.status = 'NOT_CONNECTED';
+    if (proxyServer) {
+      result.help = `Browser proxy is running on localhost:${PROXY_LISTEN_PORT} but no browser is connected. Open http://localhost:${PROXY_LISTEN_PORT} in your browser to start capturing console/network data.`;
+    } else {
+      result.help = 'No dev server detected. Start your dev server (e.g. npm run dev), then restart your AI agent. LocalPOV will auto-detect it and start the browser proxy.';
+    }
   }
 
   return textResult(result);
@@ -462,13 +514,47 @@ process.on('unhandledRejection', (reason: unknown) => {
   const msg = reason instanceof Error ? reason.message : String(reason);
   process.stderr.write(`LocalPOV MCP unhandled rejection: ${msg}\n`);
 });
+process.on('SIGINT', () => { if (proxyServer) proxyServer.close(); process.exit(0); });
+process.on('SIGTERM', () => { if (proxyServer) proxyServer.close(); process.exit(0); });
+
+let proxyServer: ReturnType<typeof createServer> | null = null;
+const PROXY_LISTEN_PORT = parseInt(process.env.LOCALPOV_PORT || '4000', 10);
+
+async function startAutoProxy(): Promise<void> {
+  try {
+    const apps = await scanPorts();
+    if (apps.length === 0) {
+      process.stderr.write(`[localpov] No dev servers detected — browser proxy not started\n`);
+      process.stderr.write(`[localpov] Start a dev server, then restart your AI agent to auto-detect it\n`);
+      return;
+    }
+
+    const targetPort = apps[0].port;
+    proxyServer = createServer({
+      targetPort,
+      listenPort: PROXY_LISTEN_PORT,
+      browserCapture: browser,
+      onLog: (level: string, msg: string | number) => {
+        if (level === 'error') process.stderr.write(`[localpov] ${msg}\n`);
+      },
+      onReady: () => {
+        process.stderr.write(`[localpov] Browser proxy: localhost:${PROXY_LISTEN_PORT} → localhost:${targetPort}\n`);
+        process.stderr.write(`[localpov] Open http://localhost:${PROXY_LISTEN_PORT} in your browser for console/network capture\n`);
+        process.stderr.write(`[localpov] Dashboard: http://localhost:${PROXY_LISTEN_PORT}/__localpov__/\n`);
+      },
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`[localpov] Browser proxy failed to start: ${msg}\n`);
+  }
+}
 
 async function main(): Promise<void> {
   // Auto-setup shell integration if not done yet
   try {
-    const { setup, detectShell } = await import('./utils/shell-init');
-    const shell = detectShell();
-    const result = setup(shell);
+    const { setup: shellSetup, detectShell: detect } = await import('./utils/shell-init');
+    const shell = detect();
+    const result = shellSetup(shell);
     if (result.success && !result.already) {
       process.stderr.write(`[localpov] Auto-installed shell integration for ${shell}\n`);
       process.stderr.write(`[localpov] Restart your terminal to start capturing sessions\n`);
@@ -476,6 +562,9 @@ async function main(): Promise<void> {
   } catch {
     // Non-fatal — shell integration is optional
   }
+
+  // Auto-start browser proxy if a dev server is detected
+  await startAutoProxy();
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

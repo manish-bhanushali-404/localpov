@@ -339,15 +339,79 @@ if (flags.help) {
 }
 
 if (flags.doctor) {
+  const fs = require('fs');
+  const path = require('path');
+  const http = require('http');
+  const { getInitFilePath } = require('../dist/utils/shell-init');
+
   console.log(`\n  ${c.b('localpov doctor')}\n`);
-  const ips = getAllIPs();
-  console.log(`  Node.js:  ${c.g('✓')} ${process.version}`);
-  console.log(`  Platform: ${process.platform} ${process.arch}`);
-  console.log(`  IPs:`);
-  for (const ip of ips) console.log(`    ${ip.name}: ${c.c(ip.address)}`);
-  if (ips.length === 0) console.log(`    ${c.y('⚠ No network interfaces found')}`);
-  console.log('');
-  process.exit(0);
+
+  // Node.js
+  console.log(`  Node.js:            ${c.g('✓')} ${process.version}`);
+  console.log(`  Platform:           ${process.platform} ${process.arch}`);
+
+  // Shell integration
+  const shell = detectShell();
+  const initPath = getInitFilePath(shell);
+  if (fs.existsSync(initPath)) {
+    console.log(`  Shell integration:  ${c.g('✓')} ${shell}`);
+  } else {
+    console.log(`  Shell integration:  ${c.r('✗')} not installed — run: npx localpov setup`);
+  }
+
+  // Terminal sessions
+  const mgr = new SessionManager();
+  const allSessions = mgr.listSessions();
+  const activeSessions = allSessions.filter(s => s.alive);
+  if (activeSessions.length > 0) {
+    console.log(`  Terminal sessions:  ${c.g('✓')} ${activeSessions.length} active, ${allSessions.length} total`);
+  } else if (allSessions.length > 0) {
+    console.log(`  Terminal sessions:  ${c.y('⚠')} 0 active (${allSessions.length} dead) — restart your terminal`);
+  } else {
+    console.log(`  Terminal sessions:  ${c.r('✗')} none — restart your terminal after setup`);
+  }
+
+  // MCP config
+  const mcpPath = path.join(process.cwd(), '.mcp.json');
+  try {
+    const content = fs.readFileSync(mcpPath, 'utf8');
+    if (content.includes('localpov')) {
+      console.log(`  MCP config:         ${c.g('✓')} .mcp.json found`);
+    } else {
+      console.log(`  MCP config:         ${c.y('⚠')} .mcp.json exists but missing localpov entry`);
+    }
+  } catch {
+    console.log(`  MCP config:         ${c.r('✗')} no .mcp.json — run: npx localpov`);
+  }
+
+  // Browser proxy
+  const proxyCheck = new Promise((resolve) => {
+    const req = http.get('http://localhost:4000/__localpov__/api/health', { timeout: 1000 }, (res) => {
+      resolve(res.statusCode === 200);
+      res.resume();
+    });
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+  });
+
+  proxyCheck.then((running) => {
+    if (running) {
+      console.log(`  Browser proxy:      ${c.g('✓')} running on :4000`);
+    } else {
+      console.log(`  Browser proxy:      ${c.y('—')} not running ${c.d('(optional: npx localpov --port <port>)')}`);
+    }
+
+    // Network
+    const ips = getAllIPs();
+    if (ips.length > 0) {
+      console.log(`  Network:            ${ips.map(ip => `${ip.name}: ${c.c(ip.address)}`).join(', ')}`);
+    }
+    console.log('');
+    process.exit(0);
+  });
+
+  // Prevent main() from running
+  flags.__doctor = true;
 }
 
 const LISTEN_PORT = flags.listen || parseInt(process.env.LOCALPOV_PORT || '4000', 10);
@@ -569,6 +633,6 @@ process.on('SIGINT', () => { console.log(''); cleanup(); process.exit(0); });
 process.on('SIGTERM', () => { cleanup(); process.exit(0); });
 
 // MCP server handles its own lifecycle — skip main()
-if (!flags.__mcp) {
+if (!flags.__mcp && !flags.__doctor) {
   main().catch((err) => { console.error(`  ${c.r('Error:')} ${err.message}`); process.exit(1); });
 }
