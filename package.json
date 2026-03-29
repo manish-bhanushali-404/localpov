@@ -1,10 +1,10 @@
 {
   "name": "localpov",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Development context bridge for AI coding agents. Terminal capture, browser console, network logs, screenshots, Docker logs — one MCP server.",
   "bin": {
-    "localpov": "./bin/localpov.js",
-    "localpov-mcp": "./bin/localpov-mcp.js"
+    "localpov": "bin/localpov.js",
+    "localpov-mcp": "bin/localpov-mcp.js"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -25,7 +25,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/localpov/localpov"
+    "url": "git+https://github.com/localpov/localpov.git"
   },
   "homepage": "https://github.com/localpov/localpov#readme",
   "bugs": {

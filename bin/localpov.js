@@ -395,36 +395,24 @@ async function firstRunSetup() {
 
   console.log('');
   console.log(`  ${c.b('Welcome to LocalPOV')} ${c.d(`v${pkg.version}`)}`);
-  console.log(`  ${c.d('First-time setup — takes 30 seconds')}`);
   console.log('');
 
-  // ─── Step 1: Shell integration ───
+  // ─── Step 1: Shell integration (auto) ───
   const shell = detectShell();
-  console.log(`  ${c.b('1.')} Shell integration ${c.d('(auto-capture all terminals for AI agents)')}`);
-  console.log(`     Detected: ${c.c(shell)}`);
-
-  const shellAnswer = await ask(`     Add auto-capture to ${shell} profile? [Y/n] `);
-  if (shellAnswer !== 'n' && shellAnswer !== 'no') {
-    const result = setup(shell);
-    if (result.success) {
-      if (result.already) {
-        console.log(`     ${c.g('✓')} Already installed`);
-      } else {
-        console.log(`     ${c.g('✓')} Added to ${c.d(result.profilePath)}`);
-        console.log(`     ${c.d('New terminals will be auto-captured after restart')}`);
-      }
+  const result = setup(shell);
+  if (result.success) {
+    if (result.already) {
+      console.log(`  ${c.g('✓')} Shell integration already installed ${c.d(`(${shell})`)}`);
     } else {
-      console.log(`     ${c.y('⚠')} ${result.error}`);
-      console.log(`     ${c.d('You can run `localpov setup` later to retry')}`);
+      console.log(`  ${c.g('✓')} Shell integration installed ${c.d(`(${shell} → ${result.profilePath})`)}`);
+      console.log(`  ${c.d('  Restart your terminal to start capturing sessions')}`);
     }
   } else {
-    console.log(`     ${c.d('Skipped. Run `localpov setup` anytime to enable.')}`);
+    console.log(`  ${c.y('⚠')} Shell integration: ${result.error}`);
+    console.log(`  ${c.d('  Run `localpov setup` to retry')}`);
   }
-  console.log('');
 
-  // ─── Step 2: MCP config for AI agents ───
-  console.log(`  ${c.b('2.')} AI agent integration ${c.d('(MCP server for Claude Code, Cursor, etc.)')}`);
-
+  // ─── Step 2: MCP config (auto) ───
   const mcpPath = require('path').join(process.cwd(), '.mcp.json');
   let mcpExists = false;
   try {
@@ -433,36 +421,23 @@ async function firstRunSetup() {
   } catch {}
 
   if (mcpExists) {
-    console.log(`     ${c.g('✓')} Already configured in ${c.d('.mcp.json')}`);
+    console.log(`  ${c.g('✓')} MCP config already in ${c.d('.mcp.json')}`);
   } else {
-    const mcpAnswer = await ask(`     Create .mcp.json in this project? [Y/n] `);
-    if (mcpAnswer !== 'n' && mcpAnswer !== 'no') {
-      const mcpConfig = {
-        mcpServers: {
-          localpov: {
-            command: 'npx',
-            args: ['-y', 'localpov', '--mcp'],
-          },
-        },
-      };
-      try {
-        const existing = JSON.parse(fs.readFileSync(mcpPath, 'utf8'));
-        existing.mcpServers = existing.mcpServers || {};
-        existing.mcpServers.localpov = mcpConfig.mcpServers.localpov;
-        fs.writeFileSync(mcpPath, JSON.stringify(existing, null, 2) + '\n', 'utf8');
-      } catch {
-        fs.writeFileSync(mcpPath, JSON.stringify(mcpConfig, null, 2) + '\n', 'utf8');
-      }
-      console.log(`     ${c.g('✓')} Created ${c.d('.mcp.json')}`);
-      console.log(`     ${c.d('Restart your AI agent to activate the MCP server')}`);
-    } else {
-      console.log(`     ${c.d('Skipped. Run `localpov mcp-config` to see the config.')}`);
-    }
+    console.log(`  ${c.b('Add to .mcp.json in your project root:')}`);
+    console.log('');
+    console.log(`  ${c.c('{')}`)
+    console.log(`  ${c.c('  "mcpServers": {')}`);
+    console.log(`  ${c.c('    "localpov": {')}`);
+    console.log(`  ${c.c('      "command": "npx",')}`);
+    console.log(`  ${c.c('      "args": ["-y", "localpov", "--mcp"]')}`);
+    console.log(`  ${c.c('    }')}`);
+    console.log(`  ${c.c('  }')}`);
+    console.log(`  ${c.c('}')}`);
   }
-  console.log('');
 
+  console.log('');
   markSetupDone();
-  console.log(`  ${c.g('✓')} Setup complete. Starting LocalPOV...\n`);
+  console.log(`  ${c.g('✓')} Ready. Starting LocalPOV...\n`);
 }
 
 async function main() {

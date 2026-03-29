@@ -464,6 +464,19 @@ process.on('unhandledRejection', (reason: unknown) => {
 });
 
 async function main(): Promise<void> {
+  // Auto-setup shell integration if not done yet
+  try {
+    const { setup, detectShell } = await import('./utils/shell-init');
+    const shell = detectShell();
+    const result = setup(shell);
+    if (result.success && !result.already) {
+      process.stderr.write(`[localpov] Auto-installed shell integration for ${shell}\n`);
+      process.stderr.write(`[localpov] Restart your terminal to start capturing sessions\n`);
+    }
+  } catch {
+    // Non-fatal — shell integration is optional
+  }
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
   sessions.cleanup();
