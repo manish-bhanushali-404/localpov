@@ -93,8 +93,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
 
 #frame{border:none;width:100%;background:var(--bg)}
 
-#view-list,#view-preview,#view-terminal,#view-debug{display:none}
-#view-list.active,#view-preview.active,#view-terminal.active,#view-debug.active{display:flex;flex-direction:column}
+#view-list,#view-preview,#view-terminal,#view-debug,#view-mcp{display:none}
+#view-list.active,#view-preview.active,#view-terminal.active,#view-debug.active,#view-mcp.active{display:flex;flex-direction:column}
 #view-list.active{display:block}
 
 /* Terminal view */
@@ -309,6 +309,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
   </div>
 </div>
 
+<!-- MCP Tools view -->
+<div id="view-mcp" style="padding:16px;overflow-y:auto;flex:1">
+  <p style="font-size:16px;margin-bottom:4px;text-align:center;font-weight:600">MCP Tool Tester</p>
+  <p style="font-size:12px;color:var(--fg2);text-align:center;margin-bottom:16px">See what your AI agent sees. Click a tool to run it.</p>
+  <div id="mcp-tools" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px"></div>
+  <div id="mcp-result" style="display:none">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <button id="mcp-back" style="padding:4px 12px;border-radius:6px;border:1px solid var(--bdr);background:var(--bg2);color:var(--fg);cursor:pointer;font-size:13px">Back</button>
+      <span id="mcp-tool-name" style="font-weight:600;font-size:14px;font-family:var(--mono)"></span>
+      <span id="mcp-tool-time" style="font-size:11px;color:var(--fg3);margin-left:auto"></span>
+    </div>
+    <pre id="mcp-output" style="background:var(--bg2);border:1px solid var(--bdr);border-radius:8px;padding:12px;font-size:12px;font-family:var(--mono);overflow-x:auto;white-space:pre-wrap;max-height:calc(100vh - 200px);overflow-y:auto"></pre>
+  </div>
+</div>
+
 <!-- Reconnect banner -->
 <div id="reconnect" class="reconnect">Connection lost — reconnecting...</div>
 
@@ -325,6 +340,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
   <button class="tab" id="tab-debug" data-view="debug">
     <span class="tab-icon">&#9888;</span>
     <span>Debug <span class="tab-badge" id="dbg-tab-badge" style="display:none">0</span></span>
+  </button>
+  <button class="tab" id="tab-mcp" data-view="mcp">
+    <span class="tab-icon">&#9881;</span>
+    MCP
   </button>
 </div>
 
@@ -353,6 +372,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
   var $tabApps = document.getElementById('tab-apps');
   var $tabTerminal = document.getElementById('tab-terminal');
   var $tabDebug = document.getElementById('tab-debug');
+  var $tabMcp = document.getElementById('tab-mcp');
+  var $mcp = document.getElementById('view-mcp');
 
   // ─── Hash routing ───
   // #apps          → app list
@@ -372,6 +393,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
       showView('terminal');
     } else if (hash === 'debug') {
       showView('debug');
+    } else if (hash === 'mcp') {
+      showView('mcp');
     } else if (hash.indexOf('preview/') === 0) {
       var port = parseInt(hash.split('/')[1], 10);
       if (port > 0 && port < 65536) {
@@ -398,9 +421,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
     $prev.classList.toggle('active', name === 'preview');
     $term.classList.toggle('active', name === 'terminal');
     $debug.classList.toggle('active', name === 'debug');
+    $mcp.classList.toggle('active', name === 'mcp');
     $tabApps.classList.toggle('active', name === 'list' || name === 'preview');
     $tabTerminal.classList.toggle('active', name === 'terminal');
     $tabDebug.classList.toggle('active', name === 'debug');
+    $tabMcp.classList.toggle('active', name === 'mcp');
     if (name === 'preview') {
       requestAnimationFrame(function() { requestAnimationFrame(sizeFrame); });
     }
@@ -409,6 +434,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
     }
     if (name === 'debug') {
       fetchDebugData();
+    }
+    if (name === 'mcp') {
+      renderMcpTools();
     }
   }
 
@@ -427,6 +455,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
   });
   $tabDebug.addEventListener('click', function() {
     navigate('debug');
+  });
+  $tabMcp.addEventListener('click', function() {
+    navigate('mcp');
   });
 
   // Set iframe height
@@ -647,10 +678,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
         $sessionsNone.style.display = 'block';
         return;
       }
+      // Only show alive sessions
+      var activeSessions = data.sessions.filter(function(s) { return s.alive; });
+      if (activeSessions.length === 0) {
+        $sessionsList.innerHTML = '';
+        $sessionsNone.style.display = 'block';
+        return;
+      }
       $sessionsNone.style.display = 'none';
       var html = '';
-      for (var i = 0; i < data.sessions.length; i++) {
-        var s = data.sessions[i];
+      for (var i = 0; i < activeSessions.length; i++) {
+        var s = activeSessions[i];
         var alive = s.alive;
         var dot = alive ? '<span style="color:#2ecc71">●</span>' : '<span style="color:#666">●</span>';
         var size = s.logSize > 1024 ? Math.round(s.logSize / 1024) + 'KB' : s.logSize + 'B';
@@ -1008,6 +1046,99 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
       });
     }
   }, 5000);
+
+  // ─── MCP Tool Tester ───
+  var mcpTools = [
+    { name: 'get_diagnostics', desc: 'Full health check', api: 'api/sessions/errors', custom: function(cb) {
+      var result = {};
+      var done = 0;
+      function check() { if (++done === 4) cb(result); }
+      fetchJSON('api/sessions', function(d) { result.terminal = { sessions: (d.sessions || []).length, active: (d.sessions || []).filter(function(s){return s.alive}).length }; check(); });
+      fetchJSON('api/browser', function(d) { result.browser = d; check(); });
+      fetchJSON('api/health', function(d) { result.system = d; check(); });
+      fetchJSON('api/ports', function(d) { result.ports = d; check(); });
+    }},
+    { name: 'list_sessions', desc: 'Terminal sessions', api: 'api/sessions' },
+    { name: 'read_terminal', desc: 'Read session output', api: 'api/sessions?lines=50', needsPid: true },
+    { name: 'get_errors', desc: 'Errors across sessions', api: 'api/sessions/errors' },
+    { name: 'read_browser', desc: 'Console + network', api: 'api/browser' },
+    { name: 'check_ports', desc: 'Port status', api: 'api/ports' },
+    { name: 'check_env', desc: 'Environment vars', api: 'api/env' },
+    { name: 'process_health', desc: 'System resources', api: 'api/process' },
+    { name: 'take_screenshot', desc: 'Browser screenshot', api: 'api/browser', note: 'Requires browser connected via proxy' },
+    { name: 'get_build_errors', desc: 'Structured build errors', api: 'api/sessions/errors', note: 'Parses TS/ESLint/Webpack output' },
+    { name: 'docker', desc: 'Docker containers', api: 'api/health', note: 'Requires Docker running' },
+    { name: 'tail_log', desc: 'Read log files', api: 'api/health', note: 'Pass file path as argument' },
+    { name: 'search_all', desc: 'Regex search terminals', api: 'api/sessions', note: 'Pass pattern as argument' },
+    { name: 'read_command', desc: 'Specific command output', api: 'api/sessions', note: 'Pass PID + index' }
+  ];
+
+  var $mcpTools = document.getElementById('mcp-tools');
+  var $mcpResult = document.getElementById('mcp-result');
+  var $mcpOutput = document.getElementById('mcp-output');
+  var $mcpToolName = document.getElementById('mcp-tool-name');
+  var $mcpToolTime = document.getElementById('mcp-tool-time');
+  var $mcpBack = document.getElementById('mcp-back');
+
+  function renderMcpTools() {
+    var html = '';
+    for (var i = 0; i < mcpTools.length; i++) {
+      var t = mcpTools[i];
+      html += '<div onclick="runMcpTool(' + i + ')" style="padding:12px;border:1px solid var(--bdr);border-radius:8px;cursor:pointer;transition:background .15s" onmouseover="this.style.background=\'var(--bg2)\'" onmouseout="this.style.background=\'transparent\'">';
+      html += '<div style="font-family:var(--mono);font-size:13px;font-weight:600">' + esc(t.name) + '</div>';
+      html += '<div style="font-size:12px;color:var(--fg2);margin-top:2px">' + esc(t.desc) + '</div>';
+      if (t.note) html += '<div style="font-size:11px;color:var(--fg3);margin-top:2px">' + esc(t.note) + '</div>';
+      html += '</div>';
+    }
+    $mcpTools.innerHTML = html;
+  }
+
+  window.runMcpTool = function(idx) {
+    var t = mcpTools[idx];
+    $mcpToolName.textContent = t.name;
+    $mcpOutput.textContent = 'Loading...';
+    $mcpToolTime.textContent = '';
+    $mcpTools.style.display = 'none';
+    $mcpResult.style.display = 'block';
+    var start = Date.now();
+
+    if (t.custom) {
+      t.custom(function(data) {
+        $mcpToolTime.textContent = (Date.now() - start) + 'ms';
+        $mcpOutput.textContent = JSON.stringify(data, null, 2);
+      });
+    } else {
+      var url = t.api;
+      // For read_terminal, pick the first alive session
+      if (t.needsPid) {
+        fetchJSON('api/sessions', function(sessions) {
+          var alive = (sessions.sessions || []).filter(function(s) { return s.alive; });
+          if (alive.length > 0) {
+            fetchJSON('api/sessions?pid=' + alive[0].pid + '&lines=50', function(data) {
+              $mcpToolTime.textContent = (Date.now() - start) + 'ms';
+              $mcpOutput.textContent = JSON.stringify(data, null, 2);
+            });
+          } else {
+            $mcpToolTime.textContent = (Date.now() - start) + 'ms';
+            $mcpOutput.textContent = JSON.stringify({ message: 'No active sessions found' }, null, 2);
+          }
+        });
+        return;
+      }
+      fetchJSON(url, function(data) {
+        $mcpToolTime.textContent = (Date.now() - start) + 'ms';
+        $mcpOutput.textContent = JSON.stringify(data, null, 2);
+      });
+    }
+  };
+
+  $mcpBack.addEventListener('click', function() {
+    $mcpResult.style.display = 'none';
+    $mcpTools.style.display = 'grid';
+  });
+
+  // Render MCP tools on init if hash is #mcp
+  if (currentView === 'mcp') renderMcpTools();
 
 })();
 </script>

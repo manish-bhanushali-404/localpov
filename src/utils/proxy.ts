@@ -224,6 +224,21 @@ export function createServer({ targetPort, listenPort, getApps, onLog, onReady, 
       });
     }
 
+    if (urlObj.pathname === '/__localpov__/api/ports') {
+      const { checkPorts } = require('./system-info');
+      return checkPorts().then((result: any) => json(res, result));
+    }
+
+    if (urlObj.pathname === '/__localpov__/api/env') {
+      const { checkEnv } = require('./system-info');
+      return json(res, checkEnv());
+    }
+
+    if (urlObj.pathname === '/__localpov__/api/process') {
+      const { getProcessHealth } = require('./system-info');
+      return json(res, getProcessHealth());
+    }
+
     if (urlObj.pathname === '/__localpov__/api/debug') {
       if (process.env.NODE_ENV === 'production' && !process.env.LOCALPOV_DEBUG) {
         return json(res, { error: 'Not found' }, 404);
