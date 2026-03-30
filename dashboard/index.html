@@ -238,7 +238,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
     <div class="prev-info">:<span class="prev-port" id="p-port"></span> <span id="p-fw"></span></div>
     <button class="btn btn-icon" id="btn-reload">&#8635;</button>
   </div>
-  <iframe id="frame" sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-modals allow-popups-to-escape-sandbox"></iframe>
+  <iframe id="frame" sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-modals allow-popups-to-escape-sandbox" src="about:blank"></iframe>
 </div>
 
 <!-- Terminal view -->
@@ -251,8 +251,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
   <div id="term-output" class="term-output"></div>
   <div id="term-empty" class="term-empty" style="display:none">
     <div>
-      <p style="font-size:16px;margin-bottom:8px">No process running</p>
-      <p>Use <code>localpov run -- npm run dev</code></p>
+      <p style="font-size:16px;margin-bottom:8px">No live terminal stream</p>
+      <p>Use <code>localpov run -- npm run dev</code> for live output here.</p>
+      <p style="margin-top:8px;font-size:12px;color:var(--fg3)">Shell sessions are captured automatically and readable by your AI agent via MCP.</p>
     </div>
   </div>
   <div id="term-status" class="term-status">
@@ -508,11 +509,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
     xhr.open('GET', 'api/switch?port=' + port, true);
     xhr.timeout = 5000;
     xhr.onload = function() {
-      $frame.src = '../?_lpov=' + Date.now();
-      showView('preview');
+      // Check if the target is actually reachable before loading iframe
+      var check = new XMLHttpRequest();
+      check.open('HEAD', '../', true);
+      check.timeout = 2000;
+      check.onload = function() {
+        if (check.status < 500) {
+          $frame.src = '../?_lpov=' + Date.now();
+        } else {
+          $frame.srcdoc = '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-family:system-ui;color:#737373"><div style="text-align:center"><p style="font-size:16px;margin-bottom:8px">App not responding</p><p>localhost:' + port + '</p><p style="margin-top:12px;font-size:13px">Is your dev server running?</p></div></div>';
+        }
+        showView('preview');
+      };
+      check.onerror = check.ontimeout = function() {
+        $frame.srcdoc = '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-family:system-ui;color:#737373"><div style="text-align:center"><p style="font-size:16px;margin-bottom:8px">App not responding</p><p>localhost:' + port + '</p><p style="margin-top:12px;font-size:13px">Is your dev server running?</p></div></div>';
+        showView('preview');
+      };
+      check.send();
     };
     xhr.onerror = xhr.ontimeout = function() {
-      $frame.src = '../?_lpov=' + Date.now();
+      $frame.srcdoc = '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-family:system-ui;color:#737373"><div style="text-align:center"><p style="font-size:16px;margin-bottom:8px">Cannot reach proxy</p></div></div>';
       showView('preview');
     };
     xhr.send();

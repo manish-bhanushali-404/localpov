@@ -5,7 +5,7 @@
   "description": "Gives AI coding agents full visibility into your development environment: terminal output, browser console errors, network failures, Docker logs, port status, and build errors. One tool call (get_diagnostics) returns a complete health check.",
   "version": "0.1.0",
   "repository": {
-    "url": "https://github.com/localpov/localpov",
+    "url": "https://github.com/manish-bhanushali-404/localpov",
     "source": "github"
   },
   "packages": [

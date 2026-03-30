@@ -25,11 +25,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/localpov/localpov.git"
+    "url": "git+https://github.com/manish-bhanushali-404/localpov.git"
   },
-  "homepage": "https://github.com/localpov/localpov#readme",
+  "homepage": "https://github.com/manish-bhanushali-404/localpov#readme",
   "bugs": {
-    "url": "https://github.com/localpov/localpov/issues"
+    "url": "https://github.com/manish-bhanushali-404/localpov/issues"
   },
   "author": "LocalPOV",
   "dependencies": {
